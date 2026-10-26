@@ -43,5 +43,5 @@ export default {
   info: {},
 
   github: "https://github.com/pravallika-92/package-compass",
-  demovideo: ''
+  demovideo: 'https://youtu.be/XLB6A6uqMQ8'
 };

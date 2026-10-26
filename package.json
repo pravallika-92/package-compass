@@ -1,5 +1,5 @@
 {
-  "name": "package-compass",
+  "name": "@pravallika2012/package-compass",
   "version": "1.0.0",
   "source": "src/frontend/index.jsx",
   "main": "dist/index.umd.js",
