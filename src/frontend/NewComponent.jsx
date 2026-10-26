@@ -5,23 +5,34 @@ const API = "https://registry.npmjs.org";
 const DOWNLOADS = "https://api.npmjs.org/downloads/point/last-week";
 const SEARCH_API = "https://registry.npmjs.org/-/v1/search";
 
-export default function NewComponent({ searchData }) {
+export default function NewComponent(props) {
+  const { searchData } = props;
+
   const [query, setQuery] = useState("");
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    props?.messageHandlers?.componentLoaded?.();
+  }, []);
+
   async function fetchPackage(name) {
     const safeName = name.trim();
+
     const [metaRes, downloadRes] = await Promise.all([
       fetch(`${API}/${encodeURIComponent(safeName)}/latest`),
       fetch(`${DOWNLOADS}/${encodeURIComponent(safeName)}`)
     ]);
 
-    if (!metaRes.ok) throw new Error(`Package "${safeName}" was not found`);
+    if (!metaRes.ok) {
+      throw new Error(`Package "${safeName}" was not found`);
+    }
 
     const meta = await metaRes.json();
-    const downloads = downloadRes.ok ? await downloadRes.json() : {};
+    const downloads = downloadRes.ok
+      ? await downloadRes.json()
+      : {};
 
     return {
       name: meta.name || safeName,
@@ -31,16 +42,26 @@ export default function NewComponent({ searchData }) {
       weeklyDownloads: downloads.downloads ?? null,
       deprecated: Boolean(meta.deprecated),
       homepage: meta.homepage || "",
-      repository: typeof meta.repository === "object"
-        ? meta.repository?.url
-        : meta.repository || ""
+      repository:
+        typeof meta.repository === "object"
+          ? meta.repository?.url
+          : meta.repository || ""
     };
   }
 
-  
   async function searchPackages(names, mode = "packages") {
-    const unique = [...new Set(names.map(n => n.trim()).filter(Boolean))].slice(0, 3);
-    if (!unique.length) return;
+    const unique = [
+      ...new Set(
+        names
+          .map(name => name.trim())
+          .filter(Boolean)
+      )
+    ].slice(0, 3);
+
+    if (!unique.length) {
+      setError("Enter at least one package name.");
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -51,69 +72,98 @@ export default function NewComponent({ searchData }) {
         const target = unique[0];
 
         const response = await fetch(
-          `${SEARCH_API}?text=${encodeURIComponent(target)}&size=15`
+          `${SEARCH_API}?text=${encodeURIComponent(target)}&size=50`
         );
 
         if (!response.ok) {
-          throw new Error("Unable to find alternative packages right now.");
+          throw new Error(
+            "Unable to find alternative packages right now."
+          );
         }
 
         const data = await response.json();
+        const results = (data.objects || []).map(
+          item => item.package
+        );
 
         const preferred = ["dayjs", "date-fns", "luxon"];
 
-        const results = (data.objects || []).map(item => item.package);
-
         const alternatives = [
           ...preferred
-            .map(name => results.find(pkg => pkg.name === name))
+            .map(name =>
+              results.find(pkg => pkg.name === name)
+            )
             .filter(Boolean),
+
           ...results.filter(pkg =>
             !preferred.includes(pkg.name) &&
             pkg.name.toLowerCase() !== target.toLowerCase()
           )
         ]
+          .filter(
+            (pkg, index, arr) =>
+              arr.findIndex(item => item.name === pkg.name) === index
+          )
           .slice(0, 3)
           .map(pkg => ({
             name: pkg.name,
             version: pkg.version || "Unknown",
-            description: pkg.description || "No description available",
+            description:
+              pkg.description || "No description available",
             license: "See npm",
             weeklyDownloads: null,
             deprecated: false,
             homepage: pkg.links?.homepage || "",
-            repository: pkg.links?.repository || "",
+            repository: pkg.links?.repository || ""
           }));
 
         if (!alternatives.length) {
-          throw new Error(`No alternatives found for "${target}".`);
+          throw new Error(
+            `No alternatives found for "${target}".`
+          );
         }
 
         setPackages(alternatives);
         return;
       }
 
-      const results = await Promise.all(unique.map(fetchPackage));
+      const results = await Promise.all(
+        unique.map(fetchPackage)
+      );
+
       setPackages(results);
     } catch (err) {
-      setError(err.message || "Unable to load package information.");
+      setError(
+        err.message || "Unable to load package information."
+      );
     } finally {
       setLoading(false);
     }
   }
+
   function handleSubmit(e) {
     e.preventDefault();
 
     const value = query.trim();
+
+    if (!value) {
+      setError("Enter an npm package name.");
+      return;
+    }
+
     const isAlternatives =
-      /\b(alternatives?|packages like|similar to)\b/i.test(value);
+      /\b(?:alternatives?|packages?\s+(?:like|similar\s+to))\b/i.test(
+        value
+      );
 
     if (isAlternatives) {
       const match = value.match(
         /(?:alternatives?\s+(?:to|for)|packages?\s+(?:like|similar\s+to))\s+(.+)/i
       );
 
-      const target = match?.[1]?.trim().split(/\s+/)[0];
+      const target = match?.[1]
+        ?.trim()
+        .split(/[\s,]+/)[0];
 
       if (target) {
         searchPackages([target], "alternatives");
@@ -124,10 +174,37 @@ export default function NewComponent({ searchData }) {
       return;
     }
 
-    const names = value
+    const cleaned = value
+      .replace(
+        /^compare\s+(?:npm\s+)?(?:packages?\s+)?/i,
+        ""
+      )
       .replace(/^npm\s+/i, "")
-      .split(/[,\s]+/)
-      .filter(Boolean);
+      .replace(
+        /\s+(?:and|versus|vs\.?)\s+/gi,
+        ","
+      )
+      .replace(/,\s*/g, ",")
+      .trim();
+
+    const names = [
+      ...new Set(
+        cleaned
+          .split(",")
+          .map(name => name.trim())
+          .filter(Boolean)
+      )
+    ];
+
+    if (!names.length) {
+      setError("Enter at least one package name.");
+      return;
+    }
+
+    if (names.length > 3) {
+      setError("You can compare up to 3 packages at a time.");
+      return;
+    }
 
     searchPackages(names);
   }
@@ -135,26 +212,61 @@ export default function NewComponent({ searchData }) {
   useEffect(() => {
     if (!searchData) return;
 
-    const data = Array.isArray(searchData) ? searchData[0] : searchData;
-    const entities = data?.entities || [];
-    const names = entities
-      .map(item => item.sourceID || item.word)
-      .filter(Boolean);
+    const data = Array.isArray(searchData)
+      ? searchData[0]
+      : searchData;
 
-     if (names.length) {
-      const originalQuery = data?.query || "";
-      const wantsAlternatives =
-        /\b(alternatives?|packages like|similar to)\b/i.test(originalQuery);
+    if (!data) return;
 
-      searchPackages(
-        wantsAlternatives ? [originalQuery.match(/(?:to|for|like)\s+([\w@./-]+)/i)?.[1] || names[0]] : names,
-        wantsAlternatives ? "alternatives" : "packages"
+    const originalQuery = data.query || "";
+    const entities = Array.isArray(data.entities)
+      ? data.entities
+      : [];
+
+    const wantsAlternatives =
+      /\b(?:alternatives?|packages like|similar to)\b/i.test(
+        originalQuery
       );
+
+    if (wantsAlternatives) {
+      const match = originalQuery.match(
+        /(?:alternatives?\s+(?:to|for)|packages?\s+(?:like|similar\s+to))\s+([\w@./-]+)/i
+      );
+
+      if (match?.[1]) {
+        searchPackages([match[1]], "alternatives");
+        return;
+      }
+    }
+
+    const names = [
+      ...new Set(
+        entities
+          .map(
+            item =>
+              item?.sourceID ||
+              item?.word ||
+              item?.name
+          )
+          .filter(Boolean)
+          .map(name => String(name).trim())
+          .filter(
+            name =>
+              name &&
+              !/^(compare|npm|package|packages|and|versus|vs)$/i.test(
+                name
+              )
+          )
+      )
+    ].slice(0, 3);
+
+    if (names.length) {
+      searchPackages(names);
     }
   }, [searchData]);
 
-  const formatDownloads = n =>
-    n == null ? "Unavailable" : n.toLocaleString();
+  const formatDownloads = number =>
+    number == null ? "Unavailable" : number.toLocaleString();
 
   return (
     <main className="pc-shell">
@@ -163,16 +275,27 @@ export default function NewComponent({ searchData }) {
           <span className="pc-logo">N</span>
           <div>
             <div className="pc-title">Package Compass</div>
-            <div className="pc-subtitle">Make smarter package choices</div>
+            <div className="pc-subtitle">
+              Make smarter package choices
+            </div>
           </div>
         </div>
-        <span className="pc-live"><span /> LIVE NPM DATA</span>
+        <span className="pc-live">
+          <span /> LIVE NPM DATA
+        </span>
       </header>
 
       <section className="pc-hero">
         <div className="pc-eyebrow">YOUR DEVELOPER TOOLKIT</div>
-        <h1>Find your perfect<br /><span>package match.</span></h1>
-        <p>Explore packages, compare versions and discover what fits your next project.</p>
+        <h1>
+          Find your perfect
+          <br />
+          <span>package match.</span>
+        </h1>
+        <p>
+          Explore packages, compare versions and discover what fits
+          your next project.
+        </p>
 
         <form className="pc-search" onSubmit={handleSubmit}>
           <span>⌕</span>
@@ -180,29 +303,50 @@ export default function NewComponent({ searchData }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Try express, fastify"
-            aria-label="Package names separated by commas"
+            aria-label="Package names or comparison query"
           />
           <button disabled={loading || !query.trim()}>
             {loading ? "Loading…" : "Explore ↗"}
           </button>
         </form>
-        <div className="pc-hint">Try: react, express, fastify · Up to 3 packages</div>
+
+        <div className="pc-hint">
+          Try: react, express, fastify · Up to 3 packages
+        </div>
       </section>
 
-      {loading && <div className="pc-message">Fetching the latest package data…</div>}
-      {error && <div className="pc-error" role="alert">{error}</div>}
+      {loading && (
+        <div className="pc-message">
+          Fetching the latest package data…
+        </div>
+      )}
+
+      {error && (
+        <div className="pc-error" role="alert">
+          {error}
+        </div>
+      )}
 
       {!loading && !error && packages.length === 0 && (
         <section className="pc-empty">
           <div className="pc-empty-icon">⌘</div>
           <h2>Your next dependency starts here</h2>
-          <p>Search for an npm package to see its version, usage and key details.</p>
+          <p>
+            Search for an npm package to see its version, usage
+            and key details.
+          </p>
           <div className="pc-examples">
             {["react", "express", "vite"].map(name => (
-              <button key={name} onClick={() => {
-                setQuery(name);
-                searchPackages([name]);
-              }}>{name} ↗</button>
+              <button
+                key={name}
+                type="button"
+                onClick={() => {
+                  setQuery(name);
+                  searchPackages([name]);
+                }}
+              >
+                {name} ↗
+              </button>
             ))}
           </div>
         </section>
@@ -213,30 +357,76 @@ export default function NewComponent({ searchData }) {
           <div className="pc-section-heading">
             <div>
               <div className="pc-eyebrow">REGISTRY RESULTS</div>
-              <h2>{packages.length > 1 ? "Compare packages" : "Package overview"}</h2>
+              <h2>
+                {packages.length > 1
+                  ? "Compare packages"
+                  : "Package overview"}
+              </h2>
             </div>
-            <span className="pc-count">{packages.length} package{packages.length > 1 ? "s" : ""}</span>
+            <span className="pc-count">
+              {packages.length} package
+              {packages.length > 1 ? "s" : ""}
+            </span>
           </div>
 
           <div className="pc-grid">
             {packages.map(pkg => (
               <article className="pc-card" key={pkg.name}>
                 <div className="pc-card-top">
-                  <span className="pc-package-icon">{pkg.name.slice(0, 1).toUpperCase()}</span>
-                  <span className={pkg.deprecated ? "pc-badge pc-badge-danger" : "pc-badge"}>
+                  <span className="pc-package-icon">
+                    {pkg.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span
+                    className={
+                      pkg.deprecated
+                        ? "pc-badge pc-badge-danger"
+                        : "pc-badge"
+                    }
+                  >
                     {pkg.deprecated ? "Deprecated" : "Published"}
                   </span>
                 </div>
+
                 <h3>{pkg.name}</h3>
-                <p className="pc-description">{pkg.description}</p>
-                <div className="pc-version">↗ Latest version <strong>{pkg.version}</strong></div>
-                <div className="pc-stats">
-                  <div><span>WEEKLY DOWNLOADS</span><strong>{formatDownloads(pkg.weeklyDownloads)}</strong></div>
-                  <div><span>LICENSE</span><strong>{pkg.license}</strong></div>
+                <p className="pc-description">
+                  {pkg.description}
+                </p>
+
+                <div className="pc-version">
+                  ↗ Latest version
+                  <strong>{pkg.version}</strong>
                 </div>
+
+                <div className="pc-stats">
+                  <div>
+                    <span>WEEKLY DOWNLOADS</span>
+                    <strong>
+                      {formatDownloads(pkg.weeklyDownloads)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>LICENSE</span>
+                    <strong>{pkg.license}</strong>
+                  </div>
+                </div>
+
                 <div className="pc-links">
-                  {pkg.homepage && <a href={pkg.homepage} target="_blank" rel="noreferrer">Homepage ↗</a>}
-                  <a href={`https://www.npmjs.com/package/${encodeURIComponent(pkg.name)}`} target="_blank" rel="noreferrer">npm page ↗</a>
+                  {pkg.homepage && (
+                    <a
+                      href={pkg.homepage}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Homepage ↗
+                    </a>
+                  )}
+                  <a
+                    href={`https://www.npmjs.com/package/${encodeURIComponent(pkg.name)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    npm page ↗
+                  </a>
                 </div>
               </article>
             ))}
@@ -246,13 +436,22 @@ export default function NewComponent({ searchData }) {
             <div className="pc-table-wrap">
               <h3>At a glance</h3>
               <table className="pc-table">
-                <thead><tr><th>Package</th><th>Version</th><th>Weekly downloads</th><th>License</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Package</th>
+                    <th>Version</th>
+                    <th>Weekly downloads</th>
+                    <th>License</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {packages.map(pkg => (
                     <tr key={pkg.name}>
                       <td>{pkg.name}</td>
                       <td>{pkg.version}</td>
-                      <td>{formatDownloads(pkg.weeklyDownloads)}</td>
+                      <td>
+                        {formatDownloads(pkg.weeklyDownloads)}
+                      </td>
                       <td>{pkg.license}</td>
                     </tr>
                   ))}
@@ -269,7 +468,7 @@ export default function NewComponent({ searchData }) {
       </footer>
 
       <style>{`
-        .pc-shell{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:var(--hd-text, #e9edf7);background:var(--hd-surface,#10131d);border:1px solid var(--hd-border,#272c3b);border-radius:20px;overflow:hidden;width:100%;max-width:100%;box-sizing:border-box}
+        .pc-shell{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:var(--hd-text,#e9edf7);background:var(--hd-surface,#10131d);border:1px solid var(--hd-border,#272c3b);border-radius:20px;overflow:hidden;width:100%;max-width:100%;box-sizing:border-box}
         .pc-shell *{box-sizing:border-box}
         .pc-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--hd-border,#272c3b)}
         .pc-brand{display:flex;align-items:center;gap:11px}.pc-logo{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#b8f36b;color:#17220b;font-weight:900;font-size:21px}

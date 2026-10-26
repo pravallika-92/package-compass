@@ -5,22 +5,27 @@ export default {
   name: pkg.name,
 
   triggers: {
-    keywords: [
-      'npm',
-      'package info',
-      'packages like',
-      'compare packages'
-    ]
-  },
+	keywords: [
+		'npm',
+		'package info',
+		'latest version',
+		'current version',
+		'compare',
+		'alternatives',
+		'packages like',
+		'similar to',
+		'show me'
+	]
+	},
 
   query_format: {
-    regex: [
-      '(npm( packages?)?|package info) HD_PACKAGES.NPM_PACKAGES',
-      '(latest|current) version of HD_PACKAGES.NPM_PACKAGES',
-      'compare( npm)?( packages?)? HD_PACKAGES.NPM_PACKAGES(,| vs| versus| and)? HD_PACKAGES.NPM_PACKAGES((,| vs| versus| and)? HD_PACKAGES.NPM_PACKAGES)?',
-      '(npm )?(alternatives?( to| for)|packages? (like|similar to)) HD_PACKAGES.NPM_PACKAGES( npm)?'
-    ]
-  },
+	regex: [
+		'(npm( packages?)?|package info) HD_PACKAGES.NPM_PACKAGES',
+		'(latest|current) version of HD_PACKAGES.NPM_PACKAGES',
+		'(npm )?(alternatives?( to| for)|packages? (like|similar to)) HD_PACKAGES.NPM_PACKAGES( npm)?',
+		'compare( npm)?( packages?)? HD_PACKAGES.NPM_PACKAGES(,| vs| versus| and)? HD_PACKAGES.NPM_PACKAGES((,| vs| versus| and)? HD_PACKAGES.NPM_PACKAGES)?',
+	]
+	},
 
   client: {
     location: pkg.module,
@@ -37,6 +42,6 @@ export default {
 
   info: {},
 
-  github: '',
+  github: "https://github.com/pravallika-92/package-compass",
   demovideo: ''
 };
